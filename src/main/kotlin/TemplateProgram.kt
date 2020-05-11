@@ -23,7 +23,7 @@ fun main() = application {
 
         val videoWriter = VideoWriter.create().size(width, height).output("output.mp4").start()
 
-        val targetDry = renderTarget(width, height) {
+        val target = renderTarget(width, height) {
             // It crashes on my end :(
             // exits with 0xC0000005 @ 1280x720
             // exits with 0xC0000374 @ 480x480
@@ -35,7 +35,7 @@ fun main() = application {
         val wet = colorBuffer(width, height, 1.0, ColorFormat.RGBa, ColorType.FLOAT32)
 
         extend {
-            drawer.isolatedWithTarget(targetDry) {
+            drawer.isolatedWithTarget(target) {
                 clear(ColorRGBa.BLACK)
             }
 
@@ -63,7 +63,7 @@ fun main() = application {
                             i.toDouble()
                     )
 
-                    drawer.isolatedWithTarget(targetDry) {
+                    drawer.isolatedWithTarget(target) {
                         model = transform {
                             translate(x, 0.0, 0.0)
                             rotate(Vector3.UNIT_X, theta)
@@ -77,13 +77,17 @@ fun main() = application {
             }
 
             drawer.isolated {
-                val dry = targetDry.colorBuffer(0)
+                val dry = target.colorBuffer(0)
                 bloom.apply(dry, wet)
                 image(wet)
             }
 
+            drawer.isolatedWithTarget(target) {
+                image(wet)
+            }
+
             if (frameCount <= 100) {
-                videoWriter.frame(targetDry.colorBuffer(0))
+                videoWriter.frame(target.colorBuffer(0))
 
                 if (frameCount == 100) {
                     videoWriter.stop()
