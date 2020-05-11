@@ -1,31 +1,94 @@
 import org.openrndr.application
 import org.openrndr.color.ColorRGBa
-import org.openrndr.draw.loadFont
-import org.openrndr.draw.loadImage
-import org.openrndr.draw.tint
-import kotlin.math.cos
-import kotlin.math.sin
+import org.openrndr.draw.*
+import org.openrndr.extra.fx.blur.GaussianBloom
+import org.openrndr.ffmpeg.VideoWriter
+import org.openrndr.math.Vector2
+import org.openrndr.math.Vector3
+import org.openrndr.math.map
+import org.openrndr.math.transforms.transform
 
 fun main() = application {
     configure {
-        width = 768
-        height = 576
+        width = 1280
+        height = 720
     }
 
     program {
+        val resolution = Vector2(width.toDouble(), height.toDouble())
+        val aspect = resolution.x / resolution.y
+
         val image = loadImage("data/images/pm5544.png")
-        val font = loadFont("data/fonts/IBMPlexMono-Regular.ttf", 64.0)
+        val bloom = GaussianBloom()
+
+        val videoWriter = VideoWriter.create().size(width, height).output("output.mp4").start()
+
+        val targetDry = renderTarget(width, height) {
+            // It crashes on my end :(
+            // exits with 0xC0000005 @ 1280x720
+            // exits with 0xC0000374 @ 480x480
+//            colorBuffer(ColorFormat.RGBa, ColorType.FLOAT32)
+            colorBuffer()
+            depthBuffer()
+        }
+
+        val wet = colorBuffer(width, height, 1.0, ColorFormat.RGBa, ColorType.FLOAT32)
 
         extend {
-            drawer.drawStyle.colorMatrix = tint(ColorRGBa.WHITE.shade(0.2))
-            drawer.image(image)
+            drawer.isolatedWithTarget(targetDry) {
+                clear(ColorRGBa.BLACK)
+            }
 
-            drawer.fill = ColorRGBa.PINK
-            drawer.circle(cos(seconds) * width / 2.0 + width / 2.0, sin(0.5 * seconds) * height / 2.0 + height / 2.0, 140.0)
+            drawer.isolated {
+                drawer.lookAt(
+                        Vector3(0.0, 0.0, 5.0),
+                        Vector3(0.0, 0.0, 0.0),
+                        Vector3.UNIT_Y
+                )
+                drawer.perspective(45.0, aspect, 0.1, 100.0)
 
-            drawer.fontMap = font
-            drawer.fill = ColorRGBa.WHITE
-            drawer.text("OPENRNDR", width / 2.0, height / 2.0)
+                for (i in 0..4) {
+                    val x = map(
+                            0.0,
+                            4.0,
+                            -2.5,
+                            2.5,
+                            i.toDouble()
+                    )
+                    val theta = 90.0 * seconds - map(
+                            0.0,
+                            4.0,
+                            0.0,
+                            90.0,
+                            i.toDouble()
+                    )
+
+                    drawer.isolatedWithTarget(targetDry) {
+                        model = transform {
+                            translate(x, 0.0, 0.0)
+                            rotate(Vector3.UNIT_X, theta)
+                        }
+
+                        shadeStyle = textureStyle(image)
+                        stroke = null
+                        rectangle(-0.5, -0.5, 1.0, 1.0)
+                    }
+                }
+            }
+
+            drawer.isolated {
+                val dry = targetDry.colorBuffer(0)
+                bloom.apply(dry, wet)
+                image(wet)
+            }
+
+            if (frameCount <= 100) {
+                videoWriter.frame(targetDry.colorBuffer(0))
+
+                if (frameCount == 100) {
+                    videoWriter.stop()
+                }
+            }
         }
     }
 }
